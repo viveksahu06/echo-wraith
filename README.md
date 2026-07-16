@@ -1,0 +1,1 @@
+ECHO WRAITH — every few seconds, a hostile ghost spawns that replays your own recorded movements on loop, so the arena slowly fills with your past mistakes. Camping is punished (lazy recordings become seeker wraiths that hunt you forever), rotating lasers come online as you score
