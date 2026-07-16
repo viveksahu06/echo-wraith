@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECHO WRAITH — you are your own worst enemy</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#04050a;
+    font-family:"Cascadia Code","Consolas",monospace; color:#cfe9ff; user-select:none; }
+  canvas { display:block; }
+
+  .hidden { display:none !important; }
+
+  /* ---------- HUD ---------- */
+  #hud { position:fixed; top:16px; left:18px; z-index:5; pointer-events:none;
+    text-shadow:0 0 8px rgba(0,229,255,.6); }
+  #score { font-size:34px; font-weight:700; color:#fff; letter-spacing:2px; }
+  #comboTag { font-size:16px; color:#ffd24a; margin-left:10px;
+    text-shadow:0 0 10px rgba(255,210,74,.8); }
+  #hearts { font-size:20px; letter-spacing:4px; margin:2px 0 10px; }
+  .barwrap { margin-bottom:8px; width:190px; }
+  .lbl { font-size:10px; letter-spacing:3px; color:#6f8fae; margin-bottom:3px; }
+  .bar { height:7px; background:rgba(120,160,200,.15); border-radius:4px; overflow:hidden;
+    border:1px solid rgba(120,160,200,.25); }
+  .bar > div { height:100%; width:100%; border-radius:4px; transition:background .15s; }
+  #echoBar { background:#ff3d7f; box-shadow:0 0 8px #ff3d7f; }
+  #dashBar { background:#37e8ff; box-shadow:0 0 8px #37e8ff; }
+  #phaseTag { font-size:13px; color:#c77bff; letter-spacing:2px; margin-top:4px;
+    text-shadow:0 0 10px rgba(199,123,255,.9); }
+  #bestHud { position:fixed; top:16px; right:20px; z-index:5; font-size:13px;
+    letter-spacing:3px; color:#6f8fae; pointer-events:none; }
+  #bestHud b { color:#cfe9ff; }
+
+  /* ---------- Overlays ---------- */
+  .overlay { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    background:radial-gradient(ellipse at center, rgba(5,8,16,.55) 0%, rgba(3,4,9,.92) 75%); }
+  h1 { font-size:56px; letter-spacing:14px; color:#fff; margin-bottom:6px;
+    text-shadow:0 0 24px rgba(0,229,255,.9), 0 0 60px rgba(255,61,127,.5); }
+  .sub { color:#ff3d7f; letter-spacing:5px; font-size:13px; margin-bottom:34px;
+    text-shadow:0 0 12px rgba(255,61,127,.8); }
+  .rules { font-size:13.5px; line-height:2.05; color:#9db8d4; max-width:560px; }
+  .rules b { color:#fff; }
+  .rules .k { display:inline-block; border:1px solid #3a5878; border-radius:4px;
+    padding:0 7px; margin:0 2px; color:#37e8ff; background:rgba(55,232,255,.06); }
+  .go { margin-top:36px; font-size:17px; color:#fff; letter-spacing:4px;
+    animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  #over h1 { color:#ff3d7f; text-shadow:0 0 24px rgba(255,61,127,.95); }
+  .stats { font-size:15px; line-height:2.2; color:#9db8d4; }
+  .stats b { color:#fff; font-size:19px; }
+  .newbest { color:#ffd24a; letter-spacing:4px; margin-top:14px; font-size:15px;
+    text-shadow:0 0 14px rgba(255,210,74,.9); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div><span id="score">0</span><span id="comboTag"></span></div>
+  <div id="hearts"></div>
+  <div class="barwrap"><div class="lbl">NEXT ECHO</div><div class="bar"><div id="echoBar"></div></div></div>
+  <div class="barwrap"><div class="lbl">DASH</div><div class="bar"><div id="dashBar"></div></div></div>
+  <div id="phaseTag" class="hidden">SPECTRAL</div>
+</div>
+<div id="bestHud" class="hidden">BEST <b id="bestS">0</b></div>
+
+<div id="menu" class="overlay">
+  <h1>ECHO WRAITH</h1>
+  <div class="sub">YOU ARE YOUR OWN WORST ENEMY</div>
+  <div class="rules">
+    Every few seconds your movement is <b>recorded</b> and spawns as a lethal
+    <b style="color:#ff3d7f">echo</b> that replays your path forever.<br>
+    The faint cyan line is <b>what your next echo will do</b> — plan around it.<br>
+    Stand still to cheat the recording and it becomes a <b style="color:#ff6a3d">seeker wraith</b> that hunts you. Forever.<br>
+    Grab <b style="color:#ffd24a">shards</b> fast to chain combos. Lasers come online as you score.<br><br>
+    <span class="k">WASD</span>/<span class="k">←↑↓→</span> move &nbsp;
+    <span class="k">SPACE</span> dash (brief invulnerability) &nbsp;
+    <span class="k">P</span> pause
+  </div>
+  <div class="go">— PRESS ENTER —</div>
+</div>
+
+<div id="over" class="overlay hidden">
+  <h1>CONSUMED</h1>
+  <div class="sub">BY YOUR OWN PAST</div>
+  <div class="stats">
+    SCORE <b id="fScore">0</b><br>
+    shards <b id="fShards">0</b> · echoes outlived <b id="fEchoes">0</b> · survived <b id="fTime">0s</b>
+  </div>
+  <div class="newbest hidden" id="newBest">✦ NEW BEST ✦</div>
+  <div class="go">— PRESS R —</div>
+</div>
+
+<div id="pause" class="overlay hidden"><h1 style="font-size:34px;letter-spacing:10px;">PAUSED</h1>
+  <div class="go">— PRESS P —</div></div>
+
+<script>
+'use strict';
+/* ============================== SETUP ============================== */
+const cv  = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const $   = id => document.getElementById(id);
+const TAU = Math.PI * 2;
+
+let W, H, CX, CY, AR;                 // canvas size, arena centre + radius
+function resize() {
+  W = cv.width  = innerWidth;
+  H = cv.height = innerHeight;
+  CX = W / 2; CY = H / 2;
+  AR = Math.min(W, H) / 2 - 34;
+}
+addEventListener('resize', resize);
+resize();
+
+/* stars for ambience */
+const stars = [];
+for (let i = 0; i < 90; i++)
+  stars.push({ x: Math.random(), y: Math.random(), s: Math.random() * 1.4 + .3, p: Math.random() * TAU });
+
+/* ============================== AUDIO ============================== */
+let AC = null;
+function initAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function beep(f, d, type = 'sine', v = .14, slide = 0) {
+  if (!AC) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t + d);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(AC.destination);
+  o.start(t); o.stop(t + d + .02);
+}
+
+/* ============================== STATE ============================== */
+let state = 'menu', paused = false;
+let player, echoes, curRec, echoTimer, echoInterval;
+let shard, pickup, beams, particles;
+let score, shards, combo, lastCollect, shake, gameTime, echoCount;
+let best = 0;
+try { best = +localStorage.getItem('echoWraithBest') || 0; } catch (e) {}
+$('bestS').textContent = best;
+
+const keys = {};
+
+function reset() {
+  player = { x: CX, y: CY, vx: 0, vy: 0, r: 10, hp: 3,
+             inv: 0, dashCd: 0, dashT: 0, phase: 0, fx: 1, fy: 0 };
+  echoes = []; curRec = []; beams = []; particles = [];
+  echoInterval = 6; echoTimer = echoInterval;
+  score = 0; shards = 0; combo = 0; lastCollect = -99;
+  shake = 0; gameTime = 0; echoCount = 0; pickup = null;
+  shard = spawnShard();
+}
+
+function spawnShard() {
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * TAU, r = Math.random() * (AR - 60) + 20;
+    const x = CX + Math.cos(a) * r, y = CY + Math.sin(a) * r;
+    if (Math.hypot(x - player.x, y - player.y) > 170) return { x, y, spin: 0 };
+  }
+  return { x: CX, y: CY, spin: 0 };
+}
+
+/* ============================== INPUT ============================== */
+addEventListener('keydown', e => {
+  initAudio();
+  const k = e.key.toLowerCase();
+  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  keys[k] = true;
+
+  if (state === 'menu'     && k === 'enter') startGame();
+  if (state === 'gameover' && k === 'r')     startGame();
+  if (state === 'playing'  && k === 'p') {
+    paused = !paused;
+    $('pause').classList.toggle('hidden', !paused);
+  }
+  if (state === 'playing' && !paused && k === ' ' && player.dashCd <= 0) {
+    let dx = (keys['d']||keys['arrowright']?1:0) - (keys['a']||keys['arrowleft']?1:0);
+    let dy = (keys['s']||keys['arrowdown'] ?1:0) - (keys['w']||keys['arrowup']  ?1:0);
+    if (!dx && !dy) { dx = player.fx; dy = player.fy; }
+    const m = Math.hypot(dx, dy) || 1;
+    player.vx = dx / m * 1450; player.vy = dy / m * 1450;
+    player.dashT = .16; player.inv = Math.max(player.inv, .3); player.dashCd = 2.2;
+    burst(player.x, player.y, '#37e8ff', 10, 220);
+    beep(880, .12, 'square', .1, -500);
+  }
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function startGame() {
+  reset();
+  state = 'playing'; paused = false;
+  $('menu').classList.add('hidden');
+  $('over').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('bestHud').classList.remove('hidden');
+  beep(440, .2, 'sine', .12, 440);
+}
+
+/* ============================== ECHOES ============================== */
+function spawnEcho() {
+  if (curRec.length < 40) { curRec = []; return; }
+  let len = 0;
+  for (let i = 5; i < curRec.length; i += 5)
+    len += Math.hypot(curRec[i].x - curRec[i-5].x, curRec[i].y - curRec[i-5].y);
+
+  if (len < 380) {                                   // camper → seeker wraith, hunts forever
+    // materialise across the arena (mirrored through centre) so it must close in
+    let sx = 2 * CX - player.x, sy = 2 * CY - player.y;
+    const sd = Math.hypot(sx - CX, sy - CY);
+    if (sd < 120) { sx = CX + (AR - 40); sy = CY; }
+    echoes.push({ seek: true, x: sx, y: sy, r: 11,
+                  spd: 78 + shards * 2.5, trail: [] });
+    beep(90, .5, 'sawtooth', .16, -40);
+  } else {                                           // normal replay echo
+    echoes.push({ seek: false, frames: curRec, idx: 0, dir: 1, r: 10,
+                  spd: 1 + Math.min(1.3, shards * .02), trail: [] });
+    beep(140, .35, 'sawtooth', .13, -60);
+  }
+  burst(curRec[0].x, curRec[0].y, '#ff3d7f', 16, 180);
+  echoCount++;
+  curRec = [];
+  shake += 5;
+}
+
+/* ============================== HELPERS ============================== */
+function normAng(a) { while (a >  Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; }
+
+function burst(x, y, col, n, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, s = (Math.random() * .7 + .3) * spd;
+    particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+                     life: 1, decay: Math.random()*1.6+1.2, col, r: Math.random()*2.5+1 });
+  }
+}
+
+function hit() {
+  if (player.inv > 0) return;
+  player.hp--; player.inv = 1.6; combo = 0;
+  shake = 16;
+  burst(player.x, player.y, '#ff3d7f', 26, 320);
+  beep(110, .4, 'square', .2, -70);
+  if (player.hp <= 0) gameOver();
+}
+
+function gameOver() {
+  state = 'gameover';
+  $('hud').classList.add('hidden');
+  $('fScore').textContent  = score;
+  $('fShards').textContent = shards;
+  $('fEchoes').textContent = echoCount;
+  $('fTime').textContent   = gameTime.toFixed(1) + 's';
+  const isBest = score > best;
+  if (isBest) {
+    best = score;
+    try { localStorage.setItem('echoWraithBest', best); } catch (e) {}
+    $('bestS').textContent = best;
+  }
+  $('newBest').classList.toggle('hidden', !isBest);
+  $('over').classList.remove('hidden');
+  beep(220, .8, 'sawtooth', .18, -180);
+}
+
+/* ============================== UPDATE ============================== */
+function update(dt) {
+  gameTime += dt;
+  const p = player;
+
+  /* movement */
+  let dx = (keys['d']||keys['arrowright']?1:0) - (keys['a']||keys['arrowleft']?1:0);
+  let dy = (keys['s']||keys['arrowdown'] ?1:0) - (keys['w']||keys['arrowup']  ?1:0);
+  if (dx || dy) {
+    const m = Math.hypot(dx, dy);
+    p.fx = dx / m; p.fy = dy / m;
+    p.vx += dx / m * 3200 * dt;
+    p.vy += dy / m * 3200 * dt;
+  }
+  const damp = p.dashT > 0 ? Math.exp(-1.2 * dt) : Math.exp(-5.5 * dt);
+  p.vx *= damp; p.vy *= damp;
+  p.x += p.vx * dt; p.y += p.vy * dt;
+  p.dashT -= dt; p.dashCd -= dt; p.inv -= dt; p.phase -= dt;
+
+  /* stay inside arena */
+  const dcx = p.x - CX, dcy = p.y - CY, dc = Math.hypot(dcx, dcy);
+  if (dc > AR - p.r) {
+    const nx = dcx / dc, ny = dcy / dc;
+    p.x = CX + nx * (AR - p.r); p.y = CY + ny * (AR - p.r);
+    const rad = p.vx * nx + p.vy * ny;
+    if (rad > 0) { p.vx -= rad * nx * 1.4; p.vy -= rad * ny * 1.4; }
+  }
+
+  /* record for the next echo */
+  curRec.push({ x: p.x, y: p.y });
+  echoTimer -= dt;
+  if (echoTimer <= 0) {
+    spawnEcho();
+    echoInterval = Math.max(2.8, 6 - shards * .045);
+    echoTimer = echoInterval;
+  }
+
+  /* echoes */
+  for (const e of echoes) {
+    if (e.seek) {
+      const ex = p.x - e.x, ey = p.y - e.y, d = Math.hypot(ex, ey) || 1;
+      e.x += ex / d * e.spd * dt;
+      e.y += ey / d * e.spd * dt;
+    } else {
+      e.idx += e.spd * dt * 60 * e.dir;
+      if (e.idx >= e.frames.length - 1) { e.idx = e.frames.length - 1; e.dir = -1; }
+      if (e.idx <= 0)                   { e.idx = 0;                   e.dir =  1; }
+      const f = e.frames[Math.round(e.idx)];
+      e.x = f.x; e.y = f.y;
+    }
+    e.trail.push({ x: e.x, y: e.y });
+    if (e.trail.length > 10) e.trail.shift();
+
+    if (p.phase <= 0 && p.inv <= 0 &&
+        Math.hypot(p.x - e.x, p.y - e.y) < p.r + e.r) hit();
+  }
+
+  /* shard */
+  shard.spin += dt * 3;
+  if (Math.hypot(p.x - shard.x, p.y - shard.y) < p.r + 13) {
+    combo = (gameTime - lastCollect < 4) ? Math.min(9, combo + 1) : 1;
+    lastCollect = gameTime;
+    score += combo; shards++;
+    burst(shard.x, shard.y, '#ffd24a', 14, 200);
+    beep(520 + combo * 70, .14, 'triangle', .13, 200);
+    shard = spawnShard();
+
+    /* lasers come online at shard thresholds */
+    const thresholds = [8, 18, 30, 45];
+    for (let i = 0; i < thresholds.length; i++)
+      if (shards >= thresholds[i] && beams.length < i + 1)
+        beams.push({ angle: Math.random() * TAU,
+                     speed: (0.55 + beams.length * .16) * (Math.random() < .5 ? -1 : 1),
+                     warm: 2.4 });
+
+    /* rare spectral pickup */
+    if (!pickup && Math.random() < .16) {
+      const a = Math.random() * TAU, r = Math.random() * (AR - 80) + 30;
+      pickup = { x: CX + Math.cos(a) * r, y: CY + Math.sin(a) * r, ttl: 9 };
+    }
+  }
+
+  /* spectral pickup */
+  if (pickup) {
+    pickup.ttl -= dt;
+    if (pickup.ttl <= 0) pickup = null;
+    else if (Math.hypot(p.x - pickup.x, p.y - pickup.y) < p.r + 12) {
+      p.phase = 4;
+      burst(pickup.x, pickup.y, '#c77bff', 18, 240);
+      beep(660, .3, 'sine', .13, 300);
+      pickup = null;
+    }
+  }
+
+  /* laser beams */
+  for (const b of beams) {
+    b.angle += b.speed * dt;
+    if (b.warm > 0) { b.warm -= dt; continue; }
+    if (dc > 40 && p.inv <= 0) {
+      const diff = normAng(Math.atan2(dcy, dcx) - b.angle);
+      if (Math.cos(diff) > 0 && Math.abs(dc * Math.sin(diff)) < 9 + p.r) hit();
+    }
+  }
+
+  /* particles + shake */
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const q = particles[i];
+    q.x += q.vx * dt; q.y += q.vy * dt;
+    q.vx *= .96; q.vy *= .96;
+    q.life -= q.decay * dt;
+    if (q.life <= 0) particles.splice(i, 1);
+  }
+  shake *= Math.exp(-7 * dt);
+
+  /* HUD */
+  $('score').textContent = score;
+  $('comboTag').textContent = combo > 1 ? '×' + combo + ' COMBO' : '';
+  $('hearts').innerHTML =
+    '<span style="color:#ff3d7f">' + '♥ '.repeat(p.hp) + '</span>' +
+    '<span style="color:#2a3448">' + '♥ '.repeat(3 - p.hp) + '</span>';
+  $('echoBar').style.width = Math.max(0, echoTimer / echoInterval * 100) + '%';
+  $('dashBar').style.width = Math.max(0, (1 - p.dashCd / 2.2) * 100) + '%';
+  const pt = $('phaseTag');
+  if (p.phase > 0) { pt.classList.remove('hidden'); pt.textContent = 'SPECTRAL ' + p.phase.toFixed(1); }
+  else pt.classList.add('hidden');
+}
+
+/* ============================== RENDER ============================== */
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#04050a';
+  ctx.fillRect(0, 0, W, H);
+
+  /* stars */
+  for (const s of stars) {
+    ctx.globalAlpha = .25 + .25 * Math.sin(t * .001 + s.p);
+    ctx.fillStyle = '#8fb8e8';
+    ctx.fillRect(s.x * W, s.y * H, s.s, s.s);
+  }
+  ctx.globalAlpha = 1;
+
+  if (shake > .3)
+    ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+
+  /* arena */
+  ctx.beginPath(); ctx.arc(CX, CY, AR, 0, TAU);
+  ctx.strokeStyle = 'rgba(55,232,255,.35)'; ctx.lineWidth = 2;
+  ctx.shadowColor = '#37e8ff'; ctx.shadowBlur = 18; ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(CX, CY, AR, 0, TAU);
+  ctx.strokeStyle = 'rgba(55,232,255,.08)'; ctx.lineWidth = 12; ctx.stroke();
+
+  if (state === 'playing') {
+    /* your current recording — what the NEXT echo will replay */
+    if (curRec.length > 4) {
+      ctx.beginPath();
+      ctx.moveTo(curRec[0].x, curRec[0].y);
+      for (let i = 4; i < curRec.length; i += 4) ctx.lineTo(curRec[i].x, curRec[i].y);
+      ctx.strokeStyle = 'rgba(55,232,255,.22)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 6]); ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    /* laser beams */
+    for (const b of beams) {
+      ctx.save();
+      ctx.translate(CX, CY); ctx.rotate(b.angle);
+      if (b.warm > 0) {
+        ctx.globalAlpha = (Math.sin(t * .02) > 0) ? .5 : .15;
+        ctx.strokeStyle = '#ff6a3d'; ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(AR, 0); ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        const g = ctx.createLinearGradient(30, 0, AR, 0);
+        g.addColorStop(0, 'rgba(255,106,61,.9)');
+        g.addColorStop(1, 'rgba(255,61,127,.6)');
+        ctx.strokeStyle = g; ctx.lineWidth = 5;
+        ctx.shadowColor = '#ff6a3d'; ctx.shadowBlur = 22;
+        ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(AR, 0); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(AR, 0); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
+    /* shard */
+    ctx.save();
+    ctx.translate(shard.x, shard.y); ctx.rotate(shard.spin);
+    const pulse = 1 + .18 * Math.sin(t * .006);
+    ctx.scale(pulse, pulse);
+    ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#ffd24a';
+    ctx.beginPath();
+    ctx.moveTo(0, -10); ctx.lineTo(7, 0); ctx.lineTo(0, 10); ctx.lineTo(-7, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore(); ctx.shadowBlur = 0;
+
+    /* spectral pickup */
+    if (pickup) {
+      const a = pickup.ttl < 3 ? (Math.sin(t * .015) > 0 ? 1 : .25) : 1;
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#c77bff'; ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#c77bff'; ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, 9 + 3 * Math.sin(t * .008), 0, TAU); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    }
+
+    /* echoes */
+    for (const e of echoes) {
+      const col = e.seek ? '#ff6a3d' : '#ff3d7f';
+      for (let i = 0; i < e.trail.length; i++) {
+        ctx.globalAlpha = (i / e.trail.length) * .25;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(e.trail[i].x, e.trail[i].y, e.r * (i / e.trail.length), 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = .95;
+      ctx.shadowColor = col; ctx.shadowBlur = 22;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#04050a';
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r * .45, 0, TAU); ctx.fill();
+      if (e.seek) {                                   // seeker "eye" locked on you
+        const ex = player.x - e.x, ey = player.y - e.y, d = Math.hypot(ex, ey) || 1;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(e.x + ex / d * 3, e.y + ey / d * 3, 2.4, 0, TAU); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    /* particles */
+    for (const q of particles) {
+      ctx.globalAlpha = Math.max(0, q.life);
+      ctx.fillStyle = q.col;
+      ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    /* player (flicker while invulnerable) */
+    const p = player;
+    if (p.inv <= 0 || Math.floor(t / 70) % 2 === 0) {
+      if (p.phase > 0) {
+        ctx.strokeStyle = '#c77bff'; ctx.lineWidth = 2;
+        ctx.shadowColor = '#c77bff'; ctx.shadowBlur = 26;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 7 + 2 * Math.sin(t * .01), 0, TAU); ctx.stroke();
+      }
+      ctx.shadowColor = '#37e8ff'; ctx.shadowBlur = 24;
+      ctx.fillStyle = '#eaffff';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#37e8ff';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * .45, 0, TAU); ctx.fill();
+    }
+  }
+
+  /* vignette */
+  const v = ctx.createRadialGradient(CX, CY, AR * .55, CX, CY, Math.max(W, H) * .72);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,.55)');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
+}
+
+/* ============================== LOOP ============================== */
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(.033, (t - last) / 1000);
+  last = t;
+  if (state === 'playing' && !paused) update(dt);
+  render(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
